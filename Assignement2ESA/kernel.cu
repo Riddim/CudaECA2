@@ -40,11 +40,6 @@ __global__ void matrixMulCUDASlow(int *A, int *B, int *C) {
 
 __global__ void matrixMulCUDA(int *A, int *B, int *C)
 {
-	//const int BLOCK_SIZE = 13;
-	// Block index
-	//int bx = blockIdx.x;
-	//int by = blockIdx.y;
-
 	// Thread index
 	int row = threadIdx.x;
 	int col = threadIdx.y;
@@ -114,6 +109,7 @@ int main()
 
 	printf("  Device name: %s\n", prop.name);
 	printf("  clockRate: %i\n", prop.clockRate);
+	printf("  warpSize: %i\n", prop.warpSize);
 	printf("  multiProcessorCount: %i\n", prop.multiProcessorCount);
 	printf("  maxThreadsDim: %ix%ix%i\n", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
 	printf("  maxThreadsPerBlock: %i\n", prop.maxThreadsPerBlock);
@@ -196,6 +192,8 @@ int main()
 			matrixMulCUDASlow,
 			block_size,
 			0);
+
+		
 
 		int activeWarps = bleh * block_size / prop.warpSize;
 		int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;
