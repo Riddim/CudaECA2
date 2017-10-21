@@ -256,6 +256,9 @@ int main()
 		return 1;
 	}
 
+
+	std::cout << "Press ENTER to exit...";
+	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 	return 0;
 }
 
