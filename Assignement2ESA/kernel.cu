@@ -1,3 +1,7 @@
+//Set to 0 for added slow serial execution, 1 for only fast execution (debugging)
+#define DEBUG 0
+
+
 // System includes
 #include <stdio.h>
 #include <assert.h>
@@ -16,6 +20,22 @@
 
 
 uint32_t h_C[169] = { 0 };
+__global__ void matrixMulCUDASlow(int *A, int *B, int *C) {
+	for (uint8_t i = 0; i < 13; i++) {
+		// ROW OPERATIONS
+		for (uint8_t j = 0; j < 13; j++) {
+			// COLUMN OPERATIONS
+			int32_t Sum = 0;
+			// CALCULATE DOT PRODUCT
+			for (uint8_t k = 0; k < 13; k++) {
+				Sum += A[(i*13) + k] * B[(k*13)+j];
+			}
+			C[(i * 13) + j] = Sum + A[(i * 13) + j] + B[(i * 13) + j];
+		}
+	}
+}
+
+
 
 
 __global__ void matrixMulCUDA(int *A, int *B, int *C)
@@ -74,24 +94,33 @@ int main()
 	};
 
 	int c[169] = { 0 };
+	int cslow[169] = { 0 };
 
-	int *dev_a, *dev_b, *dev_c;
+	int *dev_a, *dev_b, *dev_c, *dev_c_slow;
+
 
 	//Initialize Timer
-	cudaEvent_t start, stop;
+	cudaEvent_t start, start1, stop, stop1;
 	cudaEventCreate(&start);
+	cudaEventCreate(&start1);
 	cudaEventCreate(&stop);
+	cudaEventCreate(&stop1);
+
 
 
 	//Allocating vectors in device memory
 	cudaMalloc((void**)&dev_a, 169 *sizeof(int));
 	cudaMalloc((void**)&dev_b, 169 * sizeof(int));
 	cudaMalloc((void**)&dev_c, 169 * sizeof(int));
+	cudaMalloc((void**)&dev_c_slow, 169 * sizeof(int));
+
 	
 	//Copy vectors from host memory to device memory
 	cudaMemcpy(dev_a, a, 169 *sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_b, b, 169 * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_c, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_c_slow, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
+
 
 	//Invote kernel
 	int block_size = 13;
@@ -99,26 +128,63 @@ int main()
 	dim3 threads(block_size, block_size);
 	dim3 grid(13 / threads.x, 13 / threads.y);
 
+	//Fast Parallel Execution
 	cudaEventRecord(start);
 	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
 	cudaEventRecord(stop);
 
-	//Copy result from device memory to host memory
+	//Slow Serial Execution
+	if (!DEBUG) {
+		cudaEventRecord(start1);
+		matrixMulCUDASlow << <1, 1 >> > (dev_a, dev_b, dev_c_slow);
+		cudaEventRecord(stop1);
+
+
+		//Slow Print
+		std::cout << "Slow Serial Execution:\n";
+		unsigned long mem_size_C = sizeof(int) * 169;
+		cudaMemcpy(cslow, dev_c_slow, mem_size_C, cudaMemcpyDeviceToHost);
+		for (size_t i = 0; i < 13; i++) {
+			for (size_t j = 0; j < 13; j++) {
+				std::cout << cslow[(13 * i) + j];
+				std::cout << ",";
+			}
+			std::cout << "\n";
+		}
+
+		//Retrieve slowtimer
+		cudaEventSynchronize(stop1);
+		float millisecondsslow = 0;
+		cudaEventElapsedTime(&millisecondsslow, start1, stop1);
+		printf("Time (Slow): %f ms \n", millisecondsslow);
+
+		std::cout << std::endl;
+	}
+
+
+	//Fast print
+	std::cout << "Fast Parallel Execution:\n";
 	unsigned long mem_size_C = sizeof(int) * 169;
 	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
-	for(int i=0; i<169; i++)
-	printf("value %d \n", c[i]);
+	for (size_t i = 0; i < 13; i++) {
+		for (size_t j = 0; j < 13; j++) {
+			std::cout << c[(13*i)+j];
+			std::cout << ",";
+		}
+		std::cout << "\n";
+	}
 
 	//Retrieve timer
 	cudaEventSynchronize(stop);
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	printf("Time: %f ms \n", milliseconds);
+	printf("Time (Fast): %f ms \n", milliseconds);
 
 	//Free memory
 	cudaFree(dev_a);
 	cudaFree(dev_b);
 	cudaFree(dev_c);
+	cudaFree(dev_c_slow);
 
 	cudaError_t cudaStatus;
 	//const int arraySize = 5;
