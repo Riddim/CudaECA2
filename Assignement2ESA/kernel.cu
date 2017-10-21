@@ -77,6 +77,12 @@ int main()
 
 	int *dev_a, *dev_b, *dev_c;
 
+	//Initialize Timer
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+
 	//Allocating vectors in device memory
 	cudaMalloc((void**)&dev_a, 169 *sizeof(int));
 	cudaMalloc((void**)&dev_b, 169 * sizeof(int));
@@ -93,13 +99,21 @@ int main()
 	dim3 threads(block_size, block_size);
 	dim3 grid(13 / threads.x, 13 / threads.y);
 
+	cudaEventRecord(start);
 	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
+	cudaEventRecord(stop);
 
 	//Copy result from device memory to host memory
 	unsigned long mem_size_C = sizeof(int) * 169;
 	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
 	for(int i=0; i<169; i++)
 	printf("value %d \n", c[i]);
+
+	//Retrieve timer
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("Time: %f ms \n", milliseconds);
 
 	//Free memory
 	cudaFree(dev_a);
