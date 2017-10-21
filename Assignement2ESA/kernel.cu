@@ -77,15 +77,17 @@ int main()
 
 	int *dev_a, *dev_b, *dev_c;
 
+	//Allocating vectors in device memory
 	cudaMalloc((void**)&dev_a, 169 *sizeof(int));
 	cudaMalloc((void**)&dev_b, 169 * sizeof(int));
 	cudaMalloc((void**)&dev_c, 169 * sizeof(int));
 	
+	//Copy vectors from host memory to device memory
 	cudaMemcpy(dev_a, a, 169 *sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_b, b, 169 * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_c, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
 
-
+	//Invote kernel
 	int block_size = 13;
 	// Setup execution parameters
 	dim3 threads(block_size, block_size);
@@ -93,11 +95,16 @@ int main()
 
 	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
 
+	//Copy result from device memory to host memory
 	unsigned long mem_size_C = sizeof(int) * 169;
 	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
 	for(int i=0; i<169; i++)
 	printf("value %d \n", c[i]);
 
+	//Free memory
+	cudaFree(dev_a);
+	cudaFree(dev_b);
+	cudaFree(dev_c);
 
 	cudaError_t cudaStatus;
 	//const int arraySize = 5;
