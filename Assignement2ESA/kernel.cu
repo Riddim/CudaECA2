@@ -106,6 +106,21 @@ int main()
 	cudaEventCreate(&stop);
 	cudaEventCreate(&stop1);
 
+	//Device Info
+	cudaDeviceProp prop;
+	int device;
+	cudaGetDevice(&device);
+	cudaGetDeviceProperties(&prop, device);
+
+	printf("  Device name: %s\n", prop.name);
+	printf("  clockRate: %i\n", prop.clockRate);
+	printf("  multiProcessorCount: %i\n", prop.multiProcessorCount);
+	printf("  maxThreadsDim: %ix%ix%i\n", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+	printf("  maxThreadsPerBlock: %i\n", prop.maxThreadsPerBlock);
+	printf("  maxThreadsPerMultiProcessor: %i\n", prop.maxThreadsPerMultiProcessor);
+	std::cout << std::endl;
+
+
 
 
 	//Allocating vectors in device memory
@@ -133,11 +148,60 @@ int main()
 	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
 	cudaEventRecord(stop);
 
+	//Occupancy
+	int bleh = 1;
+	cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+		&bleh,
+		matrixMulCUDA,
+		block_size,
+		0);
+
+	int activeWarps = bleh * block_size / prop.warpSize;
+	int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;
+
+	std::cout << "Occupancy (fast): " << (double)activeWarps / maxWarps * 100 << "%" << std::endl;
+	std::cout << std::endl;
+
+	//Fast print
+	std::cout << "Fast Parallel Execution:\n";
+	unsigned long mem_size_C = sizeof(int) * 169;
+	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
+	for (size_t i = 0; i < 13; i++) {
+		for (size_t j = 0; j < 13; j++) {
+			std::cout << c[(13*i)+j];
+			std::cout << ",";
+		}
+		std::cout << "\n";
+	}
+
+	//Retrieve timer
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("Time (Fast): %f ms \n", milliseconds);
+	std::cout << std::endl;
+
+
 	//Slow Serial Execution
 	if (!DEBUG) {
+		block_size = 1;
 		cudaEventRecord(start1);
 		matrixMulCUDASlow << <1, 1 >> > (dev_a, dev_b, dev_c_slow);
 		cudaEventRecord(stop1);
+
+		//Occupancy
+		int bleh = 1;
+		cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+			&bleh,
+			matrixMulCUDASlow,
+			block_size,
+			0);
+
+		int activeWarps = bleh * block_size / prop.warpSize;
+		int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;
+
+		std::cout << "Occupancy (slow): " << (double)activeWarps / maxWarps * 100 << "%" << std::endl;
+		std::cout << std::endl;
 
 
 		//Slow Print
@@ -159,26 +223,9 @@ int main()
 		printf("Time (Slow): %f ms \n", millisecondsslow);
 
 		std::cout << std::endl;
+
+		printf("Speedup: %f times\n", (millisecondsslow / milliseconds));
 	}
-
-
-	//Fast print
-	std::cout << "Fast Parallel Execution:\n";
-	unsigned long mem_size_C = sizeof(int) * 169;
-	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
-	for (size_t i = 0; i < 13; i++) {
-		for (size_t j = 0; j < 13; j++) {
-			std::cout << c[(13*i)+j];
-			std::cout << ",";
-		}
-		std::cout << "\n";
-	}
-
-	//Retrieve timer
-	cudaEventSynchronize(stop);
-	float milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
-	printf("Time (Fast): %f ms \n", milliseconds);
 
 	//Free memory
 	cudaFree(dev_a);
