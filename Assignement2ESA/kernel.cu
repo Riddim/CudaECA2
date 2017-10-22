@@ -134,26 +134,27 @@ int main()
 
 
 	//Invote kernel
-	int block_size = 13;
+	int N = 13;
 	// Setup execution parameters
-	dim3 threads(block_size, block_size);
+	dim3 threads(N, N);
 	dim3 grid(13 / threads.x, 13 / threads.y);
-
+	
 	//Fast Parallel Execution
 	cudaEventRecord(start);
 	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
 	cudaEventRecord(stop);
 
 	//Occupancy
-	int bleh = 1;
+	int block_size = N*N; 
+	int output = 1;
 	cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-		&bleh,
-		matrixMulCUDA,
+		&output,
+		matrixMulCUDASlow,
 		block_size,
 		0);
 
-	int activeWarps = bleh * block_size / prop.warpSize;
-	int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;
+	double activeWarps = (double)output * (double)block_size / (double)prop.warpSize;
+	double maxWarps = (double)prop.maxThreadsPerMultiProcessor / (double)prop.warpSize;
 
 	std::cout << "Occupancy (fast): " << (double)activeWarps / maxWarps * 100 << "%" << std::endl;
 	std::cout << std::endl;
@@ -186,17 +187,15 @@ int main()
 		cudaEventRecord(stop1);
 
 		//Occupancy
-		int bleh = 1;
+		int output = 1;
 		cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-			&bleh,
+			&output,
 			matrixMulCUDASlow,
 			block_size,
 			0);
 
-		
-
-		int activeWarps = bleh * block_size / prop.warpSize;
-		int maxWarps = prop.maxThreadsPerMultiProcessor / prop.warpSize;
+		double activeWarps = (double)output * (double)block_size / (double)prop.warpSize;
+		double maxWarps = (double)prop.maxThreadsPerMultiProcessor / (double)prop.warpSize;
 
 		std::cout << "Occupancy (slow): " << (double)activeWarps / maxWarps * 100 << "%" << std::endl;
 		std::cout << std::endl;
