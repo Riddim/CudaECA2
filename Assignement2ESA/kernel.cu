@@ -137,7 +137,7 @@ int main()
 	int N = 13;
 	// Setup execution parameters
 	dim3 threads(N, N);
-	dim3 grid(13 / threads.x, 13 / threads.y);
+	//dim3 grid(13 / threads.x, 13 / threads.y);
 	
 	//Fast Parallel Execution
 	cudaEventRecord(start);
@@ -149,7 +149,7 @@ int main()
 	int output = 1;
 	cudaOccupancyMaxActiveBlocksPerMultiprocessor(
 		&output,
-		matrixMulCUDASlow,
+		matrixMulCUDA,
 		block_size,
 		0);
 
