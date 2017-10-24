@@ -21,6 +21,7 @@
 
 uint32_t h_C[169] = { 0 };
 __global__ void matrixMulCUDASlow(int *A, int *B, int *C) {
+
 	for (uint8_t i = 0; i < 13; i++) {
 		// ROW OPERATIONS
 		for (uint8_t j = 0; j < 13; j++) {
@@ -49,8 +50,55 @@ __global__ void matrixMulCUDA(int *A, int *B, int *C)
 	for (int j = 0; j < 13; j++) {
 		multi += A[(row * 13) + j] * B[col + (13 * j)];
 	}
-	__syncthreads();
+	//__syncthreads();
 	C[(row*13)+col] = multi + A[(row * 13) + col] + B[(row * 13)+col];
+}
+
+__global__ void matrixMulhelper(int row, int col, int *C, int *A, int *B, int *temp) {
+	int j = threadIdx.x;
+	int index = ((row * 13) + col) * 13;
+	temp[index+j] = A[(row * 13) + j] * B[col + (13 * j)];
+	__syncthreads();
+	if (j == 0) {
+		int added = 0;
+		for (index; index < index + 13; index++) {
+			added += temp[index];
+		}
+		C[(row * 13) + col] = added;
+	}
+}
+
+__global__ void matrixMulCUDA2(int *A, int *B, int *C, int *C2, int *temp){
+	// Thread index
+	int row = threadIdx.x;
+	int col = threadIdx.y;
+	int block = blockIdx.x;
+
+	matrixMulhelper <<<1, 13 >>> (row, col, C, A, B, temp);
+	cudaDeviceSynchronize();
+	//#pragma unroll
+	//for (int j = 0; j < 13; j++) {
+	//	multi += A[(row * 13) + j] * B[col + (13 * j)];
+	//}
+	__syncthreads();
+	if (block == 0)
+		C[(row * 13) + col] += A[(row * 13) + col] + B[(row * 13) + col];
+
+	if (block == 1)
+		C2[(col * 13) + row] += A[(row * 13) + col] + B[(row * 13) + col];
+
+}
+
+
+
+void printmatrix(int m[169]) {
+	for (size_t i = 0; i < 13; i++) {
+		for (size_t j = 0; j < 13; j++) {
+			std::cout << m[(13 * i) + j];
+			std::cout << ",";
+		}
+		std::cout << "\n";
+	}
 }
 
 
@@ -89,9 +137,11 @@ int main()
 	};
 
 	int c[169] = { 0 };
+	int c2[169] = { 0 };
+	int temp[2197] = { 0 };
 	int cslow[169] = { 0 };
 
-	int *dev_a, *dev_b, *dev_c, *dev_c_slow;
+	int *dev_a, *dev_b, *dev_c, *dev_c_slow, *dev_c2, *dev_temp;
 
 
 	//Initialize Timer
@@ -123,6 +173,8 @@ int main()
 	cudaMalloc((void**)&dev_a, 169 *sizeof(int));
 	cudaMalloc((void**)&dev_b, 169 * sizeof(int));
 	cudaMalloc((void**)&dev_c, 169 * sizeof(int));
+	cudaMalloc((void**)&dev_c2, 169 * sizeof(int));
+	cudaMalloc((void**)&dev_temp, 2197 * sizeof(int));
 	cudaMalloc((void**)&dev_c_slow, 169 * sizeof(int));
 
 	
@@ -130,6 +182,8 @@ int main()
 	cudaMemcpy(dev_a, a, 169 *sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_b, b, 169 * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_c, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_c2, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_temp, temp, 2197 * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_c_slow, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
 
 
@@ -141,7 +195,9 @@ int main()
 	
 	//Fast Parallel Execution
 	cudaEventRecord(start);
-	matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
+	//matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
+	matrixMulCUDA2 <<<5, threads >>> (dev_a, dev_b, dev_c, dev_c2, temp);
+	cudaDeviceSynchronize();
 	cudaEventRecord(stop);
 
 	//Occupancy
@@ -149,7 +205,7 @@ int main()
 	int output = 1;
 	cudaOccupancyMaxActiveBlocksPerMultiprocessor(
 		&output,
-		matrixMulCUDA,
+		matrixMulCUDA2,
 		block_size,
 		0);
 
@@ -163,13 +219,10 @@ int main()
 	std::cout << "Fast Parallel Execution:\n";
 	unsigned long mem_size_C = sizeof(int) * 169;
 	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
-	for (size_t i = 0; i < 13; i++) {
-		for (size_t j = 0; j < 13; j++) {
-			std::cout << c[(13*i)+j];
-			std::cout << ",";
-		}
-		std::cout << "\n";
-	}
+	cudaMemcpy(c2, dev_c2, mem_size_C, cudaMemcpyDeviceToHost);
+	printmatrix(c);
+	printmatrix(c2);
+
 
 	//Retrieve timer
 	cudaEventSynchronize(stop);
