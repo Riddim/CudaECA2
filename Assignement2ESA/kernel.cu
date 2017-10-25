@@ -1,100 +1,71 @@
 //Set to 0 for added slow serial execution, 1 for only fast execution (debugging)
 #define DEBUG 0
 
+#define iterations		1000
+#define N_mat			13 // mat size
+#define MAX_acc			14 // extra thread for addition of non matrix mults
+#define threads_per_block 4
 
 // System includes
 #include <stdio.h>
 #include <assert.h>
 
 // CUDA runtime
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 // Helper functions and utilities to work with CUDA
 #include <helper_functions.h>
 #include <helper_cuda.h>
 
+//#include <device_atomic_functions.hpp>
 
-//template <int BLOCK_SIZE> __global__ void
-
-
-
-
-uint32_t h_C[169] = { 0 };
 __global__ void matrixMulCUDASlow(int *A, int *B, int *C) {
 
-	for (uint8_t i = 0; i < 13; i++) {
+	for (uint8_t i = 0; i < N_mat; i++) {
 		// ROW OPERATIONS
-		for (uint8_t j = 0; j < 13; j++) {
+		for (uint8_t j = 0; j < N_mat; j++) {
 			// COLUMN OPERATIONS
 			int32_t Sum = 0;
 			// CALCULATE DOT PRODUCT
-			for (uint8_t k = 0; k < 13; k++) {
-				Sum += A[(i*13) + k] * B[(k*13)+j];
+			for (uint8_t k = 0; k < N_mat; k++) {
+				Sum += A[(i * N_mat) + k] * B[(k * N_mat) + j];
 			}
-			C[(i * 13) + j] = Sum + A[(i * 13) + j] + B[(i * 13) + j];
+			C[(i * N_mat) + j] = Sum + A[(i * N_mat) + j] + B[(i * N_mat) + j];
 		}
 	}
 }
-
-
-
-
 __global__ void matrixMulCUDA(int *A, int *B, int *C)
 {
 	// Thread index
-	int row = threadIdx.x;
+	int row = threadIdx.x + threads_per_block*blockIdx.x; // offset row with block
 	int col = threadIdx.y;
+	int	z = threadIdx.z;
+	int index = (row * N_mat) + col;
+	int offset = 2 * z;
 
-	int multi = 0;
-
-	for (int j = 0; j < 13; j++) {
-		multi += A[(row * 13) + j] * B[col + (13 * j)];
-	}
-	//__syncthreads();
-	C[(row*13)+col] = multi + A[(row * 13) + col] + B[(row * 13)+col];
-}
-
-__global__ void matrixMulhelper(int row, int col, int *C, int *A, int *B, int *temp) {
-	int j = threadIdx.x;
-	int index = ((row * 13) + col) * 13;
-	temp[index+j] = A[(row * 13) + j] * B[col + (13 * j)];
+	int multi[N_mat*N_mat];
+	if (z == 0) multi[index] = 0;
 	__syncthreads();
-	if (j == 0) {
-		int added = 0;
-		for (index; index < index + 13; index++) {
-			added += temp[index];
+
+	if (row < 13) {// prevent rows larger than 12 to write, as these don't exist
+		if (z == MAX_acc) { // extra thread
+			atomicAdd(&multi[index], A[index] + B[index]);
 		}
-		C[(row * 13) + col] = added;
+		else {
+			atomicAdd(&multi[index], A[(row * N_mat) + offset] * B[col + (N_mat * offset)]);
+		}
+	}
+	__syncthreads();
+	if (z == MAX_acc && row < 13) { // let one thread push
+		atomicExch(&C[index], multi[index]);
 	}
 }
 
-__global__ void matrixMulCUDA2(int *A, int *B, int *C, int *C2, int *temp){
-	// Thread index
-	int row = threadIdx.x;
-	int col = threadIdx.y;
-	int block = blockIdx.x;
-
-	matrixMulhelper <<<1, 13 >>> (row, col, C, A, B, temp);
-	cudaDeviceSynchronize();
-	//#pragma unroll
-	//for (int j = 0; j < 13; j++) {
-	//	multi += A[(row * 13) + j] * B[col + (13 * j)];
-	//}
-	__syncthreads();
-	if (block == 0)
-		C[(row * 13) + col] += A[(row * 13) + col] + B[(row * 13) + col];
-
-	if (block == 1)
-		C2[(col * 13) + row] += A[(row * 13) + col] + B[(row * 13) + col];
-
-}
-
-
-
-void printmatrix(int m[169]) {
-	for (size_t i = 0; i < 13; i++) {
-		for (size_t j = 0; j < 13; j++) {
-			std::cout << m[(13 * i) + j];
+void printmatrix(int m[N_mat*N_mat]) {
+	for (size_t i = 0; i < N_mat; i++) {
+		for (size_t j = 0; j < N_mat; j++) {
+			std::cout << m[(N_mat * i) + j];
 			std::cout << ",";
 		}
 		std::cout << "\n";
@@ -104,7 +75,7 @@ void printmatrix(int m[169]) {
 
 int main()
 {
-	int a[169] = {
+	int a[N_mat*N_mat] = {
 		28, 122,  80,   42,   54,   122,  98,   42,   99,   58,   124,  29,   21 ,
 		113,  85,   30,   35,   41,   98,   103,  68,   15,   50,   31,   80,   54,
 		47, 37,   23,   96,   59,   47,   84,   26,   84,   72,   51,   118,  119 ,
@@ -120,7 +91,7 @@ int main()
 		59, 84,   102,  53,   30,   34,   33,   105,  75,   102,  60,   121,  93
 	};
 
-	int b[169] = {
+	int b[N_mat*N_mat] = {
 		102,  61,   111,  79,   99,   3,    25,   50,   33,   48,   5,    94,   28 ,
 		106,  89,   35,   37,   112   ,51   ,13,  70,   3,    110,  31,   7,    99 ,
 		65, 115,  94,   68,   95,   114,  34,   34,   64,   1,    11,   66,   126 ,
@@ -136,12 +107,10 @@ int main()
 		123,  72,   56,   5,    30,   45    ,2,   11,   124,  84,   63,   47,   104
 	};
 
-	int c[169] = { 0 };
-	int c2[169] = { 0 };
-	int temp[2197] = { 0 };
-	int cslow[169] = { 0 };
+	int c[N_mat*N_mat] = { 0 };
+	int cslow[N_mat*N_mat] = { 0 };
 
-	int *dev_a, *dev_b, *dev_c, *dev_c_slow, *dev_c2, *dev_temp;
+	int *dev_a, *dev_b, *dev_c, *dev_c_slow;
 
 
 	//Initialize Timer
@@ -170,42 +139,37 @@ int main()
 
 
 	//Allocating vectors in device memory
-	cudaMalloc((void**)&dev_a, 169 *sizeof(int));
-	cudaMalloc((void**)&dev_b, 169 * sizeof(int));
-	cudaMalloc((void**)&dev_c, 169 * sizeof(int));
-	cudaMalloc((void**)&dev_c2, 169 * sizeof(int));
-	cudaMalloc((void**)&dev_temp, 2197 * sizeof(int));
-	cudaMalloc((void**)&dev_c_slow, 169 * sizeof(int));
+	cudaMalloc((void**)&dev_a, N_mat*N_mat * sizeof(int));
+	cudaMalloc((void**)&dev_b, N_mat*N_mat * sizeof(int));
+	cudaMalloc((void**)&dev_c, N_mat*N_mat * sizeof(int));
+	cudaMalloc((void**)&dev_c_slow, N_mat*N_mat * sizeof(int));
 
-	
+
 	//Copy vectors from host memory to device memory
-	cudaMemcpy(dev_a, a, 169 *sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_b, b, 169 * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_c, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_c2, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_temp, temp, 2197 * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_c_slow, c, 169 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_a, a, N_mat*N_mat * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_b, b, N_mat*N_mat * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_c, c, N_mat*N_mat * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_c_slow, c, N_mat*N_mat * sizeof(int), cudaMemcpyHostToDevice);
 
 
-	//Invote kernel
-	int N = 13;
+	//Invoce kernel
 	// Setup execution parameters
-	dim3 threads(N, N);
+	dim3 threads(3, N_mat, MAX_acc);
 	//dim3 grid(13 / threads.x, 13 / threads.y);
-	
+
 	//Fast Parallel Execution
 	cudaEventRecord(start);
 	//matrixMulCUDA <<<1,threads>>> (dev_a, dev_b, dev_c);
-	matrixMulCUDA2 <<<5, threads >>> (dev_a, dev_b, dev_c, dev_c2, temp);
+	matrixMulCUDA << <iterations, threads >> > (dev_a, dev_b, dev_c);
 	cudaDeviceSynchronize();
 	cudaEventRecord(stop);
 
 	//Occupancy
-	int block_size = N*N; 
+	int block_size = N_mat*N_mat;
 	int output = 1;
 	cudaOccupancyMaxActiveBlocksPerMultiprocessor(
 		&output,
-		matrixMulCUDA2,
+		matrixMulCUDA,
 		block_size,
 		0);
 
@@ -217,11 +181,11 @@ int main()
 
 	//Fast print
 	std::cout << "Fast Parallel Execution:\n";
-	unsigned long mem_size_C = sizeof(int) * 169;
+	unsigned long mem_size_C = sizeof(int) * N_mat*N_mat;
 	cudaMemcpy(c, dev_c, mem_size_C, cudaMemcpyDeviceToHost);
-	cudaMemcpy(c2, dev_c2, mem_size_C, cudaMemcpyDeviceToHost);
 	printmatrix(c);
-	printmatrix(c2);
+	printmatrix(a);
+	printmatrix(b);
 
 
 	//Retrieve timer
@@ -236,7 +200,7 @@ int main()
 	if (!DEBUG) {
 		block_size = 1;
 		cudaEventRecord(start1);
-		matrixMulCUDASlow << <1, 1 >> > (dev_a, dev_b, dev_c_slow);
+		matrixMulCUDASlow << <iterations, 1 >> > (dev_a, dev_b, dev_c_slow);
 		cudaEventRecord(stop1);
 
 		//Occupancy
@@ -256,15 +220,9 @@ int main()
 
 		//Slow Print
 		std::cout << "Slow Serial Execution:\n";
-		unsigned long mem_size_C = sizeof(int) * 169;
+		unsigned long mem_size_C = sizeof(int) *N_mat*N_mat;
 		cudaMemcpy(cslow, dev_c_slow, mem_size_C, cudaMemcpyDeviceToHost);
-		for (size_t i = 0; i < 13; i++) {
-			for (size_t j = 0; j < 13; j++) {
-				std::cout << cslow[(13 * i) + j];
-				std::cout << ",";
-			}
-			std::cout << "\n";
-		}
+		printmatrix(cslow);
 
 		//Retrieve slowtimer
 		cudaEventSynchronize(stop1);
@@ -284,20 +242,6 @@ int main()
 	cudaFree(dev_c_slow);
 
 	cudaError_t cudaStatus;
-	//const int arraySize = 5;
-	//const int a[arraySize] = { 1, 2, 3, 4, 5 };
-	//const int b[arraySize] = { 10, 20, 30, 40, 50 };
-	//int c[arraySize] = { 0 };
-	//// Add vectors in parallel.
-	//cudaStatus = addWithCuda(c, a, b, arraySize);
-	//if (cudaStatus != cudaSuccess) {
-	//    fprintf(stderr, "addWithCuda failed!");
-	//    return 1;
-	//}
-
-	//printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-	//    c[0], c[1], c[2], c[3], c[4]);
-
 	// cudaDeviceReset must be called before exiting in order for profiling and
 	// tracing tools such as Nsight and Visual Profiler to show complete traces.
 	cudaStatus = cudaDeviceReset();
