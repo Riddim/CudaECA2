@@ -82,7 +82,7 @@ __global__ void matrixMulCUDA2(int *A, int *B, int *C, int *C2, int *temp){
 	// Thread index
 	int row = threadIdx.x;
 	int col = threadIdx.y;
-	//int block = blockIdx.x;
+	int block = blockIdx.x;
 
 	matrixMulhelper <<<1, 13 >>> (temp, row, col, C, A, B );
 	//matrixMulhelper << <1, 13 >> > (temp, row, col, C2, A, B);
