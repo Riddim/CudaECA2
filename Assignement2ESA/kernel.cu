@@ -55,25 +55,45 @@ __global__ void matrixMulCUDA(int *A, int *B, int *C)
 
 __global__ void matrixMulhelper(int *tmp, int row, int col, int *C, int *A, int *B ) {
 	int j = threadIdx.x;
-	int index = ((row * 13 * 13) + col * 13);
+	//int index = ((row * 13 * 13) + col * 13);
 	int value = A[(row * 13) + j] * B[col + (13 * j)];
-	tmp[index+j] = value;
+
+	__shared__ int tmpv[13];
+	tmpv[j] = value;
+
+	//tmp[index+j] = value;
 
 	__syncthreads();
+	//if (j == 0) {
+	//	int added = tmp[index];
+	//	added += tmp[index + 1];
+	//	added += tmp[index + 2];
+	//	added += tmp[index + 3];
+	//	added += tmp[index + 4];
+	//	added += tmp[index + 5];
+	//	added += tmp[index + 6];
+	//	added += tmp[index + 7];
+	//	added += tmp[index + 8];
+	//	added += tmp[index + 9];
+	//	added += tmp[index + 10];
+	//	added += tmp[index + 11];
+	//	added += tmp[index + 12];
+	//	C[(row * 13) + col] = added;
+	//}
 	if (j == 0) {
-		int added = tmp[index];
-		added += tmp[index + 1];
-		added += tmp[index + 2];
-		added += tmp[index + 3];
-		added += tmp[index + 4];
-		added += tmp[index + 5];
-		added += tmp[index + 6];
-		added += tmp[index + 7];
-		added += tmp[index + 8];
-		added += tmp[index + 9];
-		added += tmp[index + 10];
-		added += tmp[index + 11];
-		added += tmp[index + 12];
+		int added = tmpv[0];
+		added += tmpv[1];
+		added += tmpv[2];
+		added += tmpv[3];
+		added += tmpv[4];
+		added += tmpv[5];
+		added += tmpv[6];
+		added += tmpv[7];
+		added += tmpv[8];
+		added += tmpv[9];
+		added += tmpv[10];
+		added += tmpv[11];
+		added += tmpv[12];
 		C[(row * 13) + col] = added;
 	}
 }
