@@ -21,13 +21,13 @@
 
 uint32_t h_C[169] = { 0 };
 __global__ void matrixMulCUDASlow(int *A, int *B, int *C) {
-	for (uint8_t i = 0; i < 13; i++) {
+	for (int i = 0; i < 13; i++) {
 		// ROW OPERATIONS
-		for (uint8_t j = 0; j < 13; j++) {
+		for (int j = 0; j < 13; j++) {
 			// COLUMN OPERATIONS
-			int32_t Sum = 0;
+			int Sum = 0;
 			// CALCULATE DOT PRODUCT
-			for (uint8_t k = 0; k < 13; k++) {
+			for (int k = 0; k < 13; k++) {
 				Sum += A[(i*13) + k] * B[(k*13)+j];
 			}
 			C[(i * 13) + j] = Sum + A[(i * 13) + j] + B[(i * 13) + j];
